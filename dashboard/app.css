@@ -100,6 +100,14 @@ input[type="search"]:focus, select:focus { outline: 2px solid rgba(242, 181, 68,
 .toggle { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; padding-bottom: 7px; }
 .toggle input { accent-color: var(--amber); width: 15px; height: 15px; }
 .count { margin: 0 0 8px auto; color: var(--dim); font: 11.5px/1 var(--mono); }
+.export {
+  margin: 0 0 6px 12px; padding: 8px 12px; border-radius: 7px;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+  font: 12px/1 ui-sans-serif, system-ui, sans-serif; cursor: pointer;
+}
+.export:hover { border-color: rgba(242, 181, 68, 0.55); color: var(--amber); }
+.export:focus-visible { outline: 2px solid rgba(242, 181, 68, 0.42); outline-offset: 1px; }
+.export[disabled] { opacity: 0.45; cursor: default; color: var(--dim); border-color: var(--line); }
 
 .grid { display: grid; grid-template-columns: minmax(0, 1.62fr) minmax(360px, 0.95fr); gap: 14px; align-items: start; }
 .board-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
@@ -157,5 +165,17 @@ table.board { width: 100%; border-collapse: collapse; }
   background: #1d2a38; color: var(--amber); font: 10px/1 var(--mono);
 }
 .note { color: var(--dim); font-size: 11.5px; margin-top: 12px; line-height: 1.55; }
+.dq { margin: 14px 0 0; border-top: 1px solid var(--line); padding-top: 12px; }
+.dq h3 {
+  font: 10.5px/1.4 var(--mono); letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--dim); margin: 10px 0 5px;
+}
+.dq h3:first-child { margin-top: 0; }
+.dqline { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font: 12px/1.35 var(--mono); color: var(--muted); }
+.dqline b { font-weight: 600; }
+.dchains { list-style: none; margin: 0; padding: 0; }
+.dchains li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font: 11.5px/1.4 var(--mono); color: var(--muted); }
+.dchains b { font-weight: 600; }
+.dchain { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .foot { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; color: var(--dim); font-size: 11.5px; line-height: 1.6; }
 .foot strong { color: var(--muted); }

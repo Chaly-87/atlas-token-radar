@@ -6,6 +6,7 @@
 
   var D = window.RADAR;
   if (!D) return;
+  var CSV = window.RADAR_CSV;
 
   var $ = function (id) { return document.getElementById(id); };
   var state = { q: '', cat: 'all', chain: 'all', sort: 'implied', watch: false, slug: null };
@@ -220,9 +221,11 @@
   // ---- table ----------------------------------------------------------------
 
   var maxValue = D.rows.reduce(function (m, r) { return Math.max(m, r.implied_value_usd); }, 1);
+  var viewRows = []; // the rows on screen, in the order they are on screen: what Export CSV writes
 
   function board() {
     var rows = sortRows(D.rows.filter(matches));
+    viewRows = rows;
     var body = $('rows');
     body.textContent = '';
     var frag = document.createDocumentFragment();
@@ -269,6 +272,7 @@
 
     body.appendChild(frag);
     $('count').textContent = rows.length + ' of ' + D.counts.board + ' rows';
+    $('export').disabled = rows.length === 0;
     quality(rows);
 
     if (!state.slug && rows.length > 0) state.slug = rows[0].slug;
@@ -287,6 +291,23 @@
         return;
       }
     }
+  }
+
+  // ---- export ---------------------------------------------------------------
+
+  /** The rows currently on screen, written by the same builder dashboard/csv.js gives the tests. */
+  function exportCsv() {
+    if (!CSV || typeof CSV.toCsv !== 'function' || viewRows.length === 0) return;
+    var blob = new Blob([CSV.toCsv(viewRows)], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = el('a');
+    a.href = url;
+    a.download = 'atlas-board-' + D.as_of + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoked on the next tick, once the click has taken the URL.
+    setTimeout(function () { URL.revokeObjectURL(url); }, 0);
   }
 
   // ---- detail ---------------------------------------------------------------
@@ -321,10 +342,57 @@
     line('Seven-day growth ' + pct(m.growth_pct), '×' + m.growth_multiplier.toFixed(3));
     line('Time without a token: ' + months(r.age_days), '×' + m.maturity_multiplier.toFixed(3));
     line('Chains covered (' + r.chains.length + ')', '×' + m.breadth_multiplier.toFixed(3));
+    line('Combined multiplier', '×' + (m.sector_multiple * m.growth_multiplier * m.maturity_multiplier * m.breadth_multiplier).toFixed(3));
     line('Implied value', usd(r.implied_value_usd), 'total');
     line('Launch odds', Math.round(r.launch_odds * 100) + '%');
     line('Risk-weighted value', usd(r.risk_weighted_usd));
     box.appendChild(math);
+
+    // What the arithmetic above rests on: this row's own defaults, then how well its chains are known.
+    var chainBuckets = (D.quality && D.quality.chains) || {};
+    var unknownMonths = (D.params && D.params.unknown_months) || 12;
+    var dq = el('div', 'dq');
+    dq.appendChild(el('h3', null, 'This row’s data quality'));
+    function flag(label, value, cls) {
+      var d = el('div', 'dqline ' + (cls || ''));
+      d.appendChild(el('span', null, label));
+      d.appendChild(el('b', null, value));
+      dq.appendChild(d);
+    }
+    flag('Growth', r.change_7d === null ? 'unknown, read as 0%' : 'known ' + pct(r.change_7d), r.change_7d === null ? 'flat' : 'good');
+    flag('Age', r.age_days === null ? 'unknown, read as ' + unknownMonths + ' months' : 'known ' + months(r.age_days), r.age_days === null ? 'flat' : 'good');
+    flag(
+      'Sector',
+      (defaultSector(r) ? 'default ' : 'table entry ') + m.sector_multiple.toFixed(2) + '×' + (defaultSector(r) ? ', no table entry' : ''),
+      defaultSector(r) ? 'flat' : 'good'
+    );
+
+    dq.appendChild(el('h3', null, 'Chain coverage'));
+    var chainsShown = r.chains.slice(0, 4);
+    if (chainsShown.length === 0) {
+      dq.appendChild(el('p', 'qnote', 'No chain is recorded for this row, so no chain coverage applies.'));
+    } else {
+      var chainList = el('ul', 'dchains');
+      chainsShown.forEach(function (name) {
+        var bucket = chainBuckets[name];
+        var li = el('li');
+        li.appendChild(el('span', 'dchain', name));
+        if (!bucket) {
+          li.appendChild(el('b', 'flat', 'not in the quality report'));
+        } else {
+          var missing = bucket.unknown_growth + bucket.unknown_age + bucket.default_sector;
+          var share = bucket.rows > 0 ? missing / bucket.rows : 0;
+          li.appendChild(el('b', share === 0 ? 'good' : 'flat', num(bucket.rows) + ' rows · ' + (share === 0 ? 'fully covered' : share.toFixed(2) + ' defaults/row')));
+        }
+        chainList.appendChild(li);
+      });
+      if (r.chains.length > chainsShown.length) {
+        chainList.appendChild(el('li', 'flat', '+' + (r.chains.length - chainsShown.length) + ' more chains'));
+      }
+      dq.appendChild(chainList);
+      dq.appendChild(el('p', 'qnote', 'Defaults per row counts each missing figure separately, over every row on that chain.'));
+    }
+    box.appendChild(dq);
 
     var ul = el('ul', 'plan');
     r.farm_steps.forEach(function (step, i) {
@@ -379,6 +447,7 @@
     $('chain').addEventListener('change', function (e) { state.chain = e.target.value; board(); });
     $('sort').addEventListener('change', function (e) { state.sort = e.target.value; board(); });
     $('watch').addEventListener('change', function (e) { state.watch = e.target.checked; board(); });
+    $('export').addEventListener('click', exportCsv);
     $('rows').addEventListener('click', function (e) {
       var tr = e.target.closest ? e.target.closest('tr') : null;
       if (!tr) return;
