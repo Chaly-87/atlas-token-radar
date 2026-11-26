@@ -66,7 +66,6 @@
   function kpis() {
     var box = $('kpis');
     box.textContent = '';
-    var medianRow = D.rows[Math.floor(D.rows.length / 2)];
     var cards = [
       ['Median implied value', usd(D.aggregates.median_implied), 'half the board is above this'],
       ['Top 10 share of value', Math.round(D.aggregates.top10_share * 100) + '%', 'how concentrated the board is'],
@@ -74,7 +73,7 @@
       ['TVL under the radar', usd(D.aggregates.tvl_sum), 'value already locked in pre-token protocols'],
       ['Highest implied value', usd(D.rows[0].implied_value_usd), D.rows[0].name + ' · ' + months(D.rows[0].age_days)]
     ];
-    if (medianRow && D.counts.board > 400) cards[3] = ['TVL under the radar', usd(D.aggregates.tvl_sum), 'summed over every row'];
+    if (D.counts.board > 400) cards[3] = ['TVL under the radar', usd(D.aggregates.tvl_sum), 'summed over every row'];
     cards.forEach(function (c) {
       var k = el('div', 'kpi');
       k.appendChild(el('div', 'k', c[0]));
@@ -82,6 +81,100 @@
       k.appendChild(el('div', 's', c[2] || ''));
       box.appendChild(k);
     });
+  }
+
+  // ---- data quality ---------------------------------------------------------
+  //
+  // Three figures the board cannot show on its own: rows whose seven-day change was missing, rows
+  // whose listing date was missing, and rows the sector table did not cover. Each is a place where
+  // the model stood in a default, so a reader can see how much of the board rests on one. The board
+  // totals come from window.RADAR.counts; the count for the rows on screen is read from the same
+  // rows the board has just filtered, so the strip follows every search, category, chain and toggle.
+
+  function defaultSector(r) {
+    var table = D.sector || {};
+    return !r.category || !Object.prototype.hasOwnProperty.call(table, r.category);
+  }
+
+  function quality(rows) {
+    var box = $('quality');
+    box.textContent = '';
+    var onBoard = D.counts.board;
+    var inView = rows.length;
+    var narrowed = inView !== onBoard;
+    var specs = [
+      {
+        key: 'unknown_growth',
+        label: 'Growth unknown',
+        legend: 'No seven-day change in the snapshot, so the model read it as 0%.',
+        test: function (r) { return r.change_7d === null; }
+      },
+      {
+        key: 'unknown_age',
+        label: 'Age unknown',
+        legend: 'No listing date in the snapshot, so the model assumed 12 months without a token.',
+        test: function (r) { return r.age_days === null; }
+      },
+      {
+        key: 'default_sector',
+        label: 'Default sector',
+        legend: 'Category outside the sector table, so the model used the 2.8x default multiple.',
+        test: defaultSector
+      }
+    ];
+
+    specs.forEach(function (s) {
+      var total = D.counts[s.key];
+      if (typeof total !== 'number') return;
+      var seen = rows.filter(s.test).length;
+      var where = narrowed
+        ? 'of ' + num(inView) + ' rows in view · ' + num(total) + ' of ' + num(onBoard) + ' on the board'
+        : 'of ' + num(onBoard) + ' board rows';
+      var card = el('div', 'qcard' + (seen > 0 ? ' flag' : ''));
+      card.setAttribute('role', 'group');
+      card.setAttribute('aria-label', s.label + ': ' + num(seen) + ' ' + where.replace(' · ', ', ') + '. ' + s.legend);
+      card.appendChild(el('div', 'k', s.label));
+      card.appendChild(el('div', 'v', num(seen)));
+      card.appendChild(el('div', 's', s.legend));
+      card.appendChild(el('div', 'src', where));
+      box.appendChild(card);
+    });
+
+    // The five chains whose rows lean on defaults hardest: its own bucket, straight from the
+    // model's quality report. The share counts each default separately, so a row missing all three
+    // weighs three times.
+    var chainBuckets = (D.quality && D.quality.chains) || {};
+    var worst = Object.keys(chainBuckets)
+      .map(function (name) {
+        var b = chainBuckets[name];
+        var missing = b.unknown_growth + b.unknown_age + b.default_sector;
+        return { name: name, rows: b.rows, missing: missing, share: b.rows > 0 ? missing / b.rows : 0 };
+      })
+      .filter(function (c) { return c.missing > 0; })
+      .sort(function (a, b) { return b.share - a.share || b.missing - a.missing || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); })
+      .slice(0, 5);
+
+    var panel = el('div', 'qchains');
+    panel.appendChild(el('h3', null, 'Weakest chain coverage'));
+    panel.appendChild(el('p', 'qnote', 'Defaults per row counts each missing figure separately; a protocol on several chains counts in each of them.'));
+    if (worst.length === 0) {
+      panel.appendChild(el('p', 'qnote', 'Every chain carries all three figures for every row.'));
+    } else {
+      var list = el('ol', 'qlist');
+      list.setAttribute('aria-label', 'The five chains with the most default figures per row');
+      worst.forEach(function (c) {
+        var li = el('li');
+        li.appendChild(el('span', 'qname', c.name));
+        li.appendChild(el('span', 'qper', c.share.toFixed(2) + ' per row'));
+        li.appendChild(el('span', 'qrows', num(c.rows) + (c.rows === 1 ? ' row' : ' rows')));
+        li.setAttribute('aria-label', c.name + ': ' + c.share.toFixed(2) + ' default figures per row across ' + num(c.rows) + ' rows');
+        list.appendChild(li);
+      });
+      panel.appendChild(list);
+    }
+    box.appendChild(panel);
+
+    if (!box.children.length) box.appendChild(el('p', 'qempty', 'This snapshot carries no data-quality counts.'));
   }
 
   // ---- filters --------------------------------------------------------------
@@ -136,8 +229,12 @@
 
     rows.forEach(function (r) {
       var tr = el('tr');
-      if (state.slug === r.slug) tr.className = 'on';
+      var on = state.slug === r.slug;
+      if (on) tr.className = 'on';
       tr.setAttribute('data-slug', r.slug);
+      // Reachable with Tab, opened with Enter or Space: the board is the page's main control.
+      tr.setAttribute('tabindex', '0');
+      if (on) tr.setAttribute('aria-current', 'true');
 
       var tdRank = el('td', 'r');
       tdRank.appendChild(el('span', 'rank', String(r.rank)));
@@ -172,9 +269,24 @@
 
     body.appendChild(frag);
     $('count').textContent = rows.length + ' of ' + D.counts.board + ' rows';
+    quality(rows);
 
     if (!state.slug && rows.length > 0) state.slug = rows[0].slug;
     detail(D.rows.filter(function (r) { return r.slug === state.slug; })[0] || rows[0]);
+    writeUrl();
+  }
+
+  /** Selects a row; the board re-renders, so the focus is put back on the row that was opened. */
+  function select(slug) {
+    state.slug = slug;
+    board();
+    var body = $('rows');
+    for (var i = 0; i < body.children.length; i += 1) {
+      if (body.children[i].getAttribute('data-slug') === slug) {
+        body.children[i].focus();
+        return;
+      }
+    }
   }
 
   // ---- detail ---------------------------------------------------------------
@@ -228,7 +340,8 @@
   // ---- state in the URL, so a view can be linked and screenshotted ----------
 
   function readUrl() {
-    var p = new URLSearchParams(location.search);
+    // The hash is the canonical copy; ?query remains readable so older links still resolve.
+    var p = new URLSearchParams(location.hash.slice(1) || location.search);
     state.q = p.get('q') || '';
     state.cat = p.get('cat') || 'all';
     state.chain = p.get('chain') || 'all';
@@ -242,6 +355,24 @@
     $('watch').checked = state.watch;
   }
 
+  /** Mirror the state into the hash, so a filtered view survives a reload and can be linked. */
+  function writeUrl() {
+    var p = new URLSearchParams();
+    if (state.q) p.set('q', state.q);
+    if (state.cat !== 'all') p.set('cat', state.cat);
+    if (state.chain !== 'all') p.set('chain', state.chain);
+    if (state.sort !== 'implied') p.set('sort', state.sort);
+    if (state.watch) p.set('watch', '1');
+    if (state.slug) p.set('slug', state.slug);
+    var qs = p.toString();
+    if (location.hash.slice(1) === qs) return;
+    try {
+      history.replaceState(null, '', location.pathname + location.search + (qs ? '#' + qs : ''));
+    } catch (e) {
+      // file:// and sandboxed frames refuse history writes; the filters still work in memory.
+    }
+  }
+
   function wire() {
     $('q').addEventListener('input', function (e) { state.q = e.target.value; board(); });
     $('cat').addEventListener('change', function (e) { state.cat = e.target.value; board(); });
@@ -251,7 +382,18 @@
     $('rows').addEventListener('click', function (e) {
       var tr = e.target.closest ? e.target.closest('tr') : null;
       if (!tr) return;
-      state.slug = tr.getAttribute('data-slug');
+      select(tr.getAttribute('data-slug'));
+    });
+    $('rows').addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      var tr = e.target.closest ? e.target.closest('tr') : null;
+      if (!tr) return;
+      e.preventDefault();
+      select(tr.getAttribute('data-slug'));
+    });
+    // Back, forward and a hand-edited hash all come back through here.
+    window.addEventListener('hashchange', function () {
+      readUrl();
       board();
     });
   }

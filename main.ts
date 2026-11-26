@@ -68,9 +68,11 @@ if (issues.length > 0) {
   process.exit(1);
 }
 
+const data = radarData(snapshot, rows);
+
 mkdirSync(out, { recursive: true });
 writeAtomic(join(out, 'board.json'), `${JSON.stringify({ rows }, null, 0)}\n`);
-writeAtomic(join(out, 'data.js'), `window.RADAR=${JSON.stringify(radarData(snapshot, rows))};\n`);
+writeAtomic(join(out, 'data.js'), `window.RADAR=${JSON.stringify(data)};\n`);
 
 function copyDir(from: string, to: string): string[] {
   if (!existsSync(from)) return [];
@@ -111,5 +113,6 @@ const top = rows[0]!;
 process.stdout.write(
   `atlas: ${snapshot.protocols.length} protocols read, ${snapshot.watchlist.length} on the watchlist, ${rows.length} pre-token rows scored\n` +
     `atlas: top row ${top.slug} at $${top.implied_value_usd.toLocaleString('en-US')} implied, ${rows[0]!.launch_odds.toFixed(3)} launch odds\n` +
-    `atlas: wrote board.json, data.js, dashboard/ (${dashboardFiles.length} files), screenshots/ (${shots.length}) and dossier.json\n`,
+    `atlas: wrote board.json, data.js, dashboard/ (${dashboardFiles.length} files), screenshots/ (${shots.length}) and dossier.json\n` +
+    `atlas: defaults in play: ${data.counts.unknown_growth} rows with unknown growth, ${data.counts.unknown_age} with unknown age, ${data.counts.default_sector} on the default sector multiple\n`,
 );

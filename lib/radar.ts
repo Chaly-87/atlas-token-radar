@@ -331,6 +331,48 @@ export function plan(p: Protocol, months: number, rank: number): string[] {
 
 /* ------------------------------------------------------------------ dashboard data */
 
+export interface QualityBucket {
+  rows: number;
+  unknown_growth: number;
+  unknown_age: number;
+  default_sector: number;
+}
+
+export interface QualityReport {
+  categories: Record<string, QualityBucket>;
+  chains: Record<string, QualityBucket>;
+}
+
+/**
+ * Where the board leans on a default, split by category and by chain. Each counter is independent:
+ * a row with an unknown growth figure and a default sector is counted in both, so a bucket's three
+ * counters can sum past its row count. A row listed on several chains is counted once in each of
+ * them, so chain rows run past the board too; a row with no chain is counted in no chain. Keys are
+ * sorted, so two runs over the same rows write the same bytes.
+ */
+export function qualityReport(rows: Row[]): QualityReport {
+  const categories: Record<string, QualityBucket> = {};
+  const chains: Record<string, QualityBucket> = {};
+
+  function add(into: Record<string, QualityBucket>, key: string, row: Row): void {
+    const bucket = (into[key] ??= { rows: 0, unknown_growth: 0, unknown_age: 0, default_sector: 0 });
+    bucket.rows += 1;
+    if (row.change_7d === null) bucket.unknown_growth += 1;
+    if (row.age_days === null) bucket.unknown_age += 1;
+    if (defaultSector(row.category)) bucket.default_sector += 1;
+  }
+
+  for (const row of rows) {
+    add(categories, row.category ?? 'Uncategorised', row);
+    for (const chain of new Set(row.chains)) add(chains, chain, row);
+  }
+
+  const sorted = (into: Record<string, QualityBucket>): Record<string, QualityBucket> =>
+    Object.fromEntries((Object.keys(into).sort() as string[]).map((k) => [k, into[k]!] as [string, QualityBucket]));
+
+  return { categories: sorted(categories), chains: sorted(chains) };
+}
+
 export interface RadarData {
   as_of: string;
   source: string;
@@ -349,6 +391,7 @@ export interface RadarData {
     default_sector: number;
   };
   aggregates: { median_implied: number; top10_share: number; median_odds: number; tvl_sum: number };
+  quality: QualityReport;
   categories: string[];
   chains: string[];
   rows: Row[];
@@ -389,6 +432,7 @@ export function radarData(snapshot: Snapshot, rows: Row[], params: Params = PARA
       unknown_age: unknownAge,
       default_sector: defaultSectorRows,
     },
+    quality: qualityReport(rows),
     aggregates: {
       median_implied: medianImplied,
       top10_share: total === 0 ? 0 : Math.round((top10 / total) * 1e4) / 1e4,

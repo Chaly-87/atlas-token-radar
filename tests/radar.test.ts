@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { board, defaultSector, median, PARAMS, radarData, score, sectorMultiple } from '../lib/radar.ts';
+import { board, defaultSector, median, PARAMS, qualityReport, radarData, score, sectorMultiple } from '../lib/radar.ts';
 import type { Params, Protocol, Snapshot } from '../lib/radar.ts';
 
 const AS_OF = '2026-01-01';
@@ -334,6 +334,71 @@ describe('radarData', () => {
     assert.equal(clean.d.counts.unknown_growth, 0);
     assert.equal(clean.d.counts.unknown_age, 0);
     assert.equal(clean.d.counts.default_sector, 0);
+  });
+});
+
+describe('qualityReport', () => {
+  function report(protocols: Protocol[]) {
+    const snap = snapshot(protocols);
+    const rows = board(snap);
+    return { rows, q: qualityReport(rows) };
+  }
+
+  it('has no buckets for an empty board', () => {
+    assert.deepEqual(qualityReport([]), { categories: {}, chains: {} });
+  });
+
+  it('counts rows and defaults per category, and files a missing category as Uncategorised', () => {
+    const { q } = report([
+      protocol({ slug: 'a', category: 'Dexs', change_7d: null, listed_at: AS_OF, chains: ['Ethereum'] }),
+      protocol({ slug: 'b', category: 'Dexs', change_7d: 0, listed_at: null, chains: ['Ethereum'] }),
+      protocol({ slug: 'c', category: 'Not A Real Category', change_7d: 0, listed_at: AS_OF, chains: ['Base'] }),
+      protocol({ slug: 'd', category: null, change_7d: 0, listed_at: AS_OF, chains: ['Base'] }),
+    ]);
+    assert.deepEqual(q.categories.Dexs, { rows: 2, unknown_growth: 1, unknown_age: 1, default_sector: 0 });
+    assert.deepEqual(q.categories['Not A Real Category'], { rows: 1, unknown_growth: 0, unknown_age: 0, default_sector: 1 });
+    assert.deepEqual(q.categories.Uncategorised, { rows: 1, unknown_growth: 0, unknown_age: 0, default_sector: 1 });
+  });
+
+  it('counts a row in every chain it lists, but only once per chain', () => {
+    const { q } = report([
+      protocol({ slug: 'a', chains: ['Ethereum', 'Base', 'Ethereum'], change_7d: null, listed_at: null }),
+      protocol({ slug: 'b', chains: ['Base'], change_7d: 0, listed_at: AS_OF }),
+      protocol({ slug: 'c', chains: [], change_7d: 0, listed_at: AS_OF }),
+    ]);
+    assert.deepEqual(Object.keys(q.chains), ['Base', 'Ethereum']);
+    assert.deepEqual(q.chains.Base, { rows: 2, unknown_growth: 1, unknown_age: 1, default_sector: 0 });
+    assert.deepEqual(q.chains.Ethereum, { rows: 1, unknown_growth: 1, unknown_age: 1, default_sector: 0 });
+    // The row with no chain lands in no chain bucket at all.
+    assert.equal(Object.values(q.chains).reduce((s, b) => s + b.rows, 0), 3);
+  });
+
+  it('counts several defaults on one row in each counter, so they can sum past the row count', () => {
+    const { q } = report([protocol({ slug: 'all', category: 'Mystery', change_7d: null, listed_at: null, chains: ['Base'] })]);
+    const bucket = q.categories.Mystery!;
+    assert.deepEqual(bucket, { rows: 1, unknown_growth: 1, unknown_age: 1, default_sector: 1 });
+    assert.deepEqual(q.chains.Base, bucket);
+  });
+
+  it('sorts its keys so two runs write the same bytes', () => {
+    const { q } = report([
+      protocol({ slug: 'a', category: 'Service', chains: ['Zeta'] }),
+      protocol({ slug: 'b', category: 'Dexs', chains: ['Arbitrum'] }),
+      protocol({ slug: 'c', category: 'RWA', chains: ['Base'] }),
+    ]);
+    assert.deepEqual(Object.keys(q.categories), ['Dexs', 'RWA', 'Service']);
+    assert.deepEqual(Object.keys(q.chains), ['Arbitrum', 'Base', 'Zeta']);
+  });
+
+  it('is what radarData publishes as quality, and its rows add up to the board', () => {
+    const snap = snapshot([
+      protocol({ slug: 'a', change_7d: null, chains: ['Base'] }),
+      protocol({ slug: 'b', category: 'Mystery', chains: ['Base', 'Ethereum'] }),
+    ]);
+    const rows = board(snap);
+    const d = radarData(snap, rows);
+    assert.deepEqual(d.quality, qualityReport(rows));
+    assert.equal(Object.values(d.quality.categories).reduce((s, b) => s + b.rows, 0), d.counts.board);
   });
 });
 
