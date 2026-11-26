@@ -62,11 +62,12 @@
           <th class="r">#</th>
           <th>Protocol</th>
           <th>Chains</th>
-          <th class="n">TVL</th>
-          <th class="n">7d</th>
-          <th class="n">No token for</th>
-          <th class="n">Implied value</th>
-          <th class="n">Odds</th>
+          <th class="n" data-sort="tvl"><button class="sortbtn" type="button" data-sort="tvl" title="Sort by TVL">TVL</button></th>
+          <th class="n" data-sort="growth"><button class="sortbtn" type="button" data-sort="growth" title="Sort by 7-day growth">7d</button></th>
+          <th class="n" data-sort="age"><button class="sortbtn" type="button" data-sort="age" title="Sort by time without a token">No token for</button></th>
+          <th class="n" data-sort="implied"><button class="sortbtn" type="button" data-sort="implied" title="Sort by implied value">Implied value</button></th>
+          <th class="n" data-sort="weighted"><button class="sortbtn" type="button" data-sort="weighted" title="Sort by risk-weighted value">Risk-adj.</button></th>
+          <th class="n" data-sort="odds"><button class="sortbtn" type="button" data-sort="odds" title="Sort by launch odds">Odds</button></th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
@@ -76,6 +77,7 @@
 </main>
 
 <footer class="foot">
+  <p class="prov" id="prov" aria-label="Pipeline provenance"></p>
   <p><strong>How the number is made.</strong> Implied value = TVL × the multiple the market pays per dollar of TVL in that sector × a seven-day growth factor × a maturity factor for time run without a token × a breadth factor for the chains it covers. Launch odds come from the same figures, so a large protocol that may never launch and a smaller one already positioning for a launch are both visible. Nothing here is a prediction or advice: every figure comes from the sealed snapshot of <span id="snapdate"></span>.</p>
 </footer>
 

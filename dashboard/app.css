@@ -118,6 +118,16 @@ table.board { width: 100%; border-collapse: collapse; }
   text-align: left; padding: 11px 10px; border-bottom: 1px solid var(--line);
 }
 .board th.n, .board td.n { text-align: right; }
+.sortbtn {
+  margin: 0; padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit;
+}
+.sortbtn:hover { color: var(--text); }
+.sortbtn:focus-visible { outline: 2px solid rgba(242, 181, 68, 0.55); outline-offset: 2px; border-radius: 2px; }
+.board thead th[aria-sort="ascending"] .sortbtn,
+.board thead th[aria-sort="descending"] .sortbtn { color: var(--text); }
+.board thead th[aria-sort="ascending"] .sortbtn::after { content: " ↑"; color: var(--amber); }
+.board thead th[aria-sort="descending"] .sortbtn::after { content: " ↓"; color: var(--amber); }
 .board th.r, .board td.r { text-align: right; width: 46px; }
 .board td { padding: 9px 10px; border-bottom: 1px solid rgba(34, 48, 64, 0.55); font-size: 13px; vertical-align: middle; }
 .board tbody tr { cursor: pointer; }
@@ -179,3 +189,5 @@ table.board { width: 100%; border-collapse: collapse; }
 .dchain { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .foot { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; color: var(--dim); font-size: 11.5px; line-height: 1.6; }
 .foot strong { color: var(--muted); }
+.foot .prov { margin: 0 0 8px; font: 11px/1.6 var(--mono); color: var(--dim); }
+.foot .prov b { color: var(--muted); font-weight: 600; }

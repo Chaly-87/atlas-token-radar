@@ -9,7 +9,7 @@
   var CSV = window.RADAR_CSV;
 
   var $ = function (id) { return document.getElementById(id); };
-  var state = { q: '', cat: 'all', chain: 'all', sort: 'implied', watch: false, slug: null };
+  var state = { q: '', cat: 'all', chain: 'all', sort: 'implied', dir: 'desc', watch: false, slug: null };
 
   var MODELS = D.model_id + ' · ' + D.counts.pre_token + ' pre-token protocols scored';
 
@@ -81,6 +81,25 @@
       k.appendChild(el('div', 'v', c[1]));
       k.appendChild(el('div', 's', c[2] || ''));
       box.appendChild(k);
+    });
+  }
+
+  // ---- footer provenance ----------------------------------------------------
+
+  /** What produced the numbers on screen, spelled out in the footer. */
+  function provenance() {
+    var box = $('prov');
+    box.textContent = '';
+    box.appendChild(document.createTextNode('Pipeline '));
+    [
+      ['source', D.source || 'unknown'],
+      ['snapshot', D.as_of],
+      ['protocols read', num(D.counts.protocols)],
+      ['rows on the board', num(D.counts.board)]
+    ].forEach(function (pair, i) {
+      if (i) box.appendChild(document.createTextNode(' · '));
+      box.appendChild(document.createTextNode(pair[0] + ' '));
+      box.appendChild(el('b', null, pair[1]));
     });
   }
 
@@ -204,18 +223,51 @@
     return true;
   }
 
+  var SORT_KEYS = { implied: true, odds: true, weighted: true, tvl: true, growth: true, age: true };
+
+  /** The number a sort key reads; a missing figure sorts to the bottom when descending. */
+  function sortValue(r, key) {
+    if (key === 'odds') return r.launch_odds;
+    if (key === 'weighted') return r.risk_weighted_usd;
+    if (key === 'tvl') return r.tvl_usd;
+    if (key === 'growth') return r.change_7d === null ? -999 : r.change_7d;
+    if (key === 'age') return r.age_days === null ? -1 : r.age_days;
+    return r.implied_value_usd;
+  }
+
   function sortRows(rows) {
-    var copy = rows.slice();
     var key = state.sort;
-    copy.sort(function (a, b) {
-      if (key === 'implied') return b.implied_value_usd - a.implied_value_usd;
-      if (key === 'odds') return b.launch_odds - a.launch_odds || b.implied_value_usd - a.implied_value_usd;
-      if (key === 'weighted') return b.risk_weighted_usd - a.risk_weighted_usd;
-      if (key === 'tvl') return b.tvl_usd - a.tvl_usd;
-      if (key === 'growth') return (b.change_7d === null ? -999 : b.change_7d) - (a.change_7d === null ? -999 : a.change_7d);
-      return (b.age_days === null ? -1 : b.age_days) - (a.age_days === null ? -1 : a.age_days);
+    var dir = state.dir === 'asc' ? 1 : -1;
+    return rows.slice().sort(function (a, b) {
+      return (
+        (sortValue(a, key) - sortValue(b, key)) * dir ||
+        b.implied_value_usd - a.implied_value_usd ||
+        (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0)
+      );
     });
-    return copy;
+  }
+
+  /** One place changes the sort, so the header buttons, the select and the hash cannot disagree. */
+  function setSort(key, dir) {
+    if (SORT_KEYS[key] !== true) return;
+    state.sort = key;
+    state.dir = dir === 'asc' ? 'asc' : 'desc';
+    $('sort').value = key;
+    board();
+  }
+
+  /** A header opens its column descending; pressing it again reverses the order. */
+  function toggleSort(key) {
+    setSort(key, state.sort === key && state.dir === 'desc' ? 'asc' : 'desc');
+  }
+
+  /** aria-sort on every sortable header, so a screen reader knows the order on screen. */
+  function sortHeaders() {
+    var ths = $('board').querySelectorAll('th[data-sort]');
+    for (var i = 0; i < ths.length; i += 1) {
+      var key = ths[i].getAttribute('data-sort');
+      ths[i].setAttribute('aria-sort', key !== state.sort ? 'none' : state.dir === 'asc' ? 'ascending' : 'descending');
+    }
   }
 
   // ---- table ----------------------------------------------------------------
@@ -224,6 +276,7 @@
   var viewRows = []; // the rows on screen, in the order they are on screen: what Export CSV writes
 
   function board() {
+    sortHeaders();
     var rows = sortRows(D.rows.filter(matches));
     viewRows = rows;
     var body = $('rows');
@@ -265,6 +318,7 @@
       bar.appendChild(fill);
       tdVal.appendChild(bar);
       tr.appendChild(tdVal);
+      tr.appendChild(el('td', 'n num', usd(r.risk_weighted_usd)));
 
       tr.appendChild(el('td', 'n odds', Math.round(r.launch_odds * 100) + '%'));
       frag.appendChild(tr);
@@ -413,7 +467,9 @@
     state.q = p.get('q') || '';
     state.cat = p.get('cat') || 'all';
     state.chain = p.get('chain') || 'all';
-    state.sort = p.get('sort') || 'implied';
+    var sort = p.get('sort');
+    state.sort = SORT_KEYS[sort] === true ? sort : 'implied';
+    state.dir = p.get('dir') === 'asc' ? 'asc' : 'desc';
     state.watch = p.get('watch') === '1';
     state.slug = p.get('slug') || null;
     $('q').value = state.q;
@@ -430,6 +486,7 @@
     if (state.cat !== 'all') p.set('cat', state.cat);
     if (state.chain !== 'all') p.set('chain', state.chain);
     if (state.sort !== 'implied') p.set('sort', state.sort);
+    if (state.dir === 'asc') p.set('dir', 'asc');
     if (state.watch) p.set('watch', '1');
     if (state.slug) p.set('slug', state.slug);
     var qs = p.toString();
@@ -445,7 +502,13 @@
     $('q').addEventListener('input', function (e) { state.q = e.target.value; board(); });
     $('cat').addEventListener('change', function (e) { state.cat = e.target.value; board(); });
     $('chain').addEventListener('change', function (e) { state.chain = e.target.value; board(); });
-    $('sort').addEventListener('change', function (e) { state.sort = e.target.value; board(); });
+    $('sort').addEventListener('change', function (e) { setSort(e.target.value, 'desc'); });
+    // Native buttons: Enter and Space become clicks, so no extra key handling is needed.
+    $('board').querySelector('thead').addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('button[data-sort]') : null;
+      if (!btn) return;
+      toggleSort(btn.getAttribute('data-sort'));
+    });
     $('watch').addEventListener('change', function (e) { state.watch = e.target.checked; board(); });
     $('export').addEventListener('click', exportCsv);
     $('rows').addEventListener('click', function (e) {
@@ -469,6 +532,7 @@
 
   chips();
   kpis();
+  provenance();
   fillSelect('cat', D.categories, 'Every category');
   fillSelect('chain', D.chains, 'Every chain');
   readUrl();
