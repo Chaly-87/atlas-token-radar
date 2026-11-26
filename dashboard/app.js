@@ -7,6 +7,7 @@
   var D = window.RADAR;
   if (!D) return;
   var CSV = window.RADAR_CSV;
+  var SORT = window.RADAR_SORT;
 
   var $ = function (id) { return document.getElementById(id); };
   var state = { q: '', cat: 'all', chain: 'all', sort: 'implied', dir: 'desc', watch: false, slug: null };
@@ -223,33 +224,22 @@
     return true;
   }
 
-  var SORT_KEYS = { implied: true, odds: true, weighted: true, tvl: true, growth: true, age: true };
+  // The keys and the comparator live in dashboard/sort.js, so the order the page draws is the one
+  // node:test checks.
 
-  /** The number a sort key reads; a missing figure sorts to the bottom when descending. */
-  function sortValue(r, key) {
-    if (key === 'odds') return r.launch_odds;
-    if (key === 'weighted') return r.risk_weighted_usd;
-    if (key === 'tvl') return r.tvl_usd;
-    if (key === 'growth') return r.change_7d === null ? -999 : r.change_7d;
-    if (key === 'age') return r.age_days === null ? -1 : r.age_days;
-    return r.implied_value_usd;
+  function sortKey(key) {
+    return SORT && SORT.isKey(key) ? key : 'implied';
   }
 
   function sortRows(rows) {
-    var key = state.sort;
+    var key = sortKey(state.sort);
     var dir = state.dir === 'asc' ? 1 : -1;
-    return rows.slice().sort(function (a, b) {
-      return (
-        (sortValue(a, key) - sortValue(b, key)) * dir ||
-        b.implied_value_usd - a.implied_value_usd ||
-        (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0)
-      );
-    });
+    return rows.slice().sort(function (a, b) { return SORT.compare(a, b, key) * dir; });
   }
 
   /** One place changes the sort, so the header buttons, the select and the hash cannot disagree. */
   function setSort(key, dir) {
-    if (SORT_KEYS[key] !== true) return;
+    if (!SORT || !SORT.isKey(key)) return;
     state.sort = key;
     state.dir = dir === 'asc' ? 'asc' : 'desc';
     $('sort').value = key;
@@ -468,7 +458,7 @@
     state.cat = p.get('cat') || 'all';
     state.chain = p.get('chain') || 'all';
     var sort = p.get('sort');
-    state.sort = SORT_KEYS[sort] === true ? sort : 'implied';
+    state.sort = SORT.isKey(sort) ? sort : 'implied';
     state.dir = p.get('dir') === 'asc' ? 'asc' : 'desc';
     state.watch = p.get('watch') === '1';
     state.slug = p.get('slug') || null;
