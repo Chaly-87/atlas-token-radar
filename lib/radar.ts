@@ -120,6 +120,11 @@ export function sectorMultiple(category: string | null): number {
   return SECTOR[category] ?? SECTOR_DEFAULT;
 }
 
+/** Whether the sector table had no entry, so the default multiple stood in for the category. */
+export function defaultSector(category: string | null): boolean {
+  return category === null || !Object.hasOwn(SECTOR, category);
+}
+
 const VERSIONED = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
 const WRAPPED = /\b(wrapped|staked|staking)\b/i;
 const EXCHANGES = ['binance', 'coinbase', 'bybit', 'kraken', 'bitget', 'okx', 'bitfinex', 'gemini'];
@@ -150,6 +155,19 @@ export function ageDays(asOf: string, listedAt: string | null): number | null {
 }
 
 const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
+
+/**
+ * The median of an already sorted list: the central value when the count is odd, and the mean of
+ * the two central values — rounded by `round`, to whole dollars by default — when it is even.
+ * An empty list has no middle value and reads as zero.
+ */
+export function median(sorted: number[], round: (n: number) => number = Math.round): number {
+  const n = sorted.length;
+  if (n === 0) return 0;
+  const upper = sorted[n >> 1]!;
+  if (n % 2 === 1) return upper;
+  return round((sorted[(n >> 1) - 1]! + upper) / 2);
+}
 
 export interface Scored {
   multiplier: number;
@@ -320,7 +338,16 @@ export interface RadarData {
   model_id: string;
   params: Params;
   sector: Record<string, number>;
-  counts: { protocols: number; pre_token: number; watchlist: number; board: number; live: number };
+  counts: {
+    protocols: number;
+    pre_token: number;
+    watchlist: number;
+    board: number;
+    live: number;
+    unknown_growth: number;
+    unknown_age: number;
+    default_sector: number;
+  };
   aggregates: { median_implied: number; top10_share: number; median_odds: number; tvl_sum: number };
   categories: string[];
   chains: string[];
@@ -330,10 +357,14 @@ export interface RadarData {
 
 export function radarData(snapshot: Snapshot, rows: Row[], params: Params = PARAMS): RadarData {
   const implied = rows.map((r) => r.implied_value_usd).sort((a, b) => a - b);
-  const median = implied.length === 0 ? 0 : implied[Math.floor(implied.length / 2)]!;
+  const medianImplied = median(implied);
   const total = rows.reduce((s, r) => s + r.implied_value_usd, 0);
   const top10 = rows.slice(0, 10).reduce((s, r) => s + r.implied_value_usd, 0);
   const odds = rows.map((r) => r.launch_odds).sort((a, b) => a - b);
+  // The board's unseen defaults, counted so a reader can see how much of it rests on them.
+  const unknownGrowth = rows.filter((r) => r.change_7d === null).length;
+  const unknownAge = rows.filter((r) => r.age_days === null).length;
+  const defaultSectorRows = rows.filter((r) => defaultSector(r.category)).length;
   const live = snapshot.protocols
     .filter((p) => !preToken(p) && p.mcap_usd !== null && p.category !== 'CEX')
     .sort((a, b) => (b.mcap_usd ?? 0) - (a.mcap_usd ?? 0))
@@ -354,11 +385,14 @@ export function radarData(snapshot: Snapshot, rows: Row[], params: Params = PARA
       watchlist: snapshot.watchlist.length,
       board: rows.length,
       live: live.length,
+      unknown_growth: unknownGrowth,
+      unknown_age: unknownAge,
+      default_sector: defaultSectorRows,
     },
     aggregates: {
-      median_implied: median,
+      median_implied: medianImplied,
       top10_share: total === 0 ? 0 : Math.round((top10 / total) * 1e4) / 1e4,
-      median_odds: odds.length === 0 ? 0 : odds[Math.floor(odds.length / 2)]!,
+      median_odds: median(odds, (n) => Math.round(n * 1e4) / 1e4),
       tvl_sum: rows.reduce((s, r) => s + r.tvl_usd, 0),
     },
     categories,

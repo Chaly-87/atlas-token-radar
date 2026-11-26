@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { board, PARAMS, score, sectorMultiple } from '../lib/radar.ts';
+import { board, defaultSector, median, PARAMS, radarData, score, sectorMultiple } from '../lib/radar.ts';
 import type { Params, Protocol, Snapshot } from '../lib/radar.ts';
 
 const AS_OF = '2026-01-01';
@@ -50,6 +50,40 @@ describe('sectorMultiple', () => {
   it('falls back to the default multiple for an unknown or missing category', () => {
     assert.equal(sectorMultiple('Not A Real Category'), 2.8);
     assert.equal(sectorMultiple(null), 2.8);
+  });
+});
+
+describe('defaultSector', () => {
+  it('flags only the categories the sector table does not hold', () => {
+    assert.equal(defaultSector('Dexs'), false);
+    assert.equal(defaultSector('Service'), false); // a known category that happens to map to 2.8
+    assert.equal(defaultSector('Not A Real Category'), true);
+    assert.equal(defaultSector(null), true);
+  });
+});
+
+describe('median', () => {
+  it('reads zero for an empty list and the only value for a one-element list', () => {
+    assert.equal(median([]), 0);
+    assert.equal(median([7]), 7);
+    assert.equal(median([4_144_000]), 4_144_000);
+  });
+
+  it('takes the central value when the count is odd', () => {
+    assert.equal(median([3, 4.5, 10]), 4.5);
+    assert.equal(median([1, 2, 3, 4, 100]), 3);
+  });
+
+  it('averages the two central values when the count is even, rounding the mean', () => {
+    assert.equal(median([1, 2]), 2); // 1.5 rounds up
+    assert.equal(median([4, 9]), 7); // 6.5 rounds up
+    assert.equal(median([1, 2, 3, 4]), 3); // (2 + 3) / 2 = 2.5, rounded up
+    assert.equal(median([4_144_000, 8_288_000, 12_432_000, 16_576_000]), 10_360_000);
+  });
+
+  it('rounds through the rounding function it is given', () => {
+    assert.equal(median([1, 2], Math.floor), 1);
+    assert.equal(median([1, 1.5], (n) => Math.round(n * 10) / 10), 1.3);
   });
 });
 
@@ -231,6 +265,75 @@ describe('score: launch odds', () => {
     const p = protocol({ tvl_usd: 3e8, change_7d: 12, listed_at: '2024-02-02' });
     const s = score(p, AS_OF, false);
     assert.ok(Math.abs(s.weighted - s.implied * s.odds) / s.weighted < 1e-3);
+  });
+});
+
+describe('radarData', () => {
+  function data(protocols: Protocol[], watchlist: string[] = []) {
+    const snap = snapshot(protocols, watchlist);
+    const rows = board(snap);
+    return { rows, d: radarData(snap, rows) };
+  }
+
+  it('reports the true median implied value for boards of any size', () => {
+    // Every protocol is Dexs, one chain, unknown age, no growth: implied scales with TVL at
+    // 4.144 dollars per dollar of TVL, so these rows read 4.144M, 8.288M, 12.432M and 16.576M.
+    assert.equal(data([]).d.aggregates.median_implied, 0);
+    assert.equal(data([protocol({ slug: 'a', tvl_usd: 1e6 })]).d.aggregates.median_implied, 4_144_000);
+
+    const three = data([
+      protocol({ slug: 'a', tvl_usd: 1e6 }),
+      protocol({ slug: 'b', tvl_usd: 2e6 }),
+      protocol({ slug: 'c', tvl_usd: 3e6 }),
+    ]);
+    assert.equal(three.d.aggregates.median_implied, 8_288_000);
+
+    const four = data([
+      protocol({ slug: 'a', tvl_usd: 1e6 }),
+      protocol({ slug: 'b', tvl_usd: 2e6 }),
+      protocol({ slug: 'c', tvl_usd: 3e6 }),
+      protocol({ slug: 'd', tvl_usd: 4e6 }),
+    ]);
+    assert.equal(four.d.aggregates.median_implied, 10_360_000); // (8.288M + 12.432M) / 2
+  });
+
+  it('reports the median launch odds, averaging the middle pair on an even board', () => {
+    assert.equal(data([]).d.aggregates.median_odds, 0);
+
+    const odd = data([
+      protocol({ slug: 'a', tvl_usd: 1e6 }),
+      protocol({ slug: 'b', tvl_usd: 1e8 }),
+      protocol({ slug: 'c', tvl_usd: 1e10 }),
+    ]);
+    assert.equal(odd.d.aggregates.median_odds, odd.rows[1]!.launch_odds);
+
+    const even = data([protocol({ slug: 'a', tvl_usd: 1e6 }), protocol({ slug: 'b', tvl_usd: 1e8 })]);
+    const pair = (even.rows[0]!.launch_odds + even.rows[1]!.launch_odds) / 2;
+    assert.equal(even.d.aggregates.median_odds, Math.round(pair * 1e4) / 1e4);
+    assert.notEqual(even.d.aggregates.median_odds, even.rows[1]!.launch_odds);
+  });
+
+  it('counts the rows whose missing figures fell back to a default', () => {
+    const { rows, d } = data([
+      protocol({ slug: 'plain' }), // no listed_at: unknown age
+      protocol({ slug: 'no-growth', change_7d: null, listed_at: AS_OF }), // null growth read as 0
+      protocol({ slug: 'odd-category', category: 'Not A Real Category', listed_at: AS_OF }),
+      protocol({ slug: 'null-category', category: null, listed_at: AS_OF }),
+      protocol({ slug: 'service', category: 'Service', listed_at: AS_OF }), // known, and maps to 2.8
+      protocol({ slug: 'has-token', mcap_usd: 1e9, change_7d: null }), // never on the board
+    ]);
+    assert.equal(rows.length, 5);
+    assert.equal(d.counts.protocols, 6);
+    assert.equal(d.counts.pre_token, 5);
+    assert.equal(d.counts.unknown_growth, 1);
+    assert.equal(d.counts.unknown_age, 1);
+    // The odd and missing categories only: Service is a known key even though it is also 2.8.
+    assert.equal(d.counts.default_sector, 2);
+
+    const clean = data([protocol({ slug: 'clean', change_7d: 0, listed_at: AS_OF })]);
+    assert.equal(clean.d.counts.unknown_growth, 0);
+    assert.equal(clean.d.counts.unknown_age, 0);
+    assert.equal(clean.d.counts.default_sector, 0);
   });
 });
 

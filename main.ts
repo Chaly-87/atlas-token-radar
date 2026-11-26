@@ -6,10 +6,11 @@
 //
 //   MAKEFUN_OUTPUT_DIR=out node main.ts --input ../token-radar-01-kit/input/snapshot.json
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { board, boardIssues, parseSnapshot, radarData } from './lib/radar.ts';
+import { board, boardIssues, parseSnapshot, radarData, SnapshotError } from './lib/radar.ts';
+import type { Snapshot } from './lib/radar.ts';
 import { buildDossier } from './vendor/makefun-board.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -28,7 +29,37 @@ if (!existsSync(inputFile)) {
   process.exit(2);
 }
 const out = arg('output', process.env.MAKEFUN_OUTPUT_DIR ?? '/output');
-const snapshot = parseSnapshot(readFileSync(inputFile, 'utf8'));
+
+/** The snapshot, or one clear line on stderr: a malformed input is a refusal, not a stack trace. */
+function readSnapshot(file: string): Snapshot {
+  try {
+    return parseSnapshot(readFileSync(file, 'utf8'));
+  } catch (error) {
+    if (error instanceof SnapshotError) {
+      process.stderr.write(`atlas: the snapshot at ${file} cannot be read: ${error.message}\n`);
+      process.exit(2);
+    }
+    throw error;
+  }
+}
+
+const snapshot = readSnapshot(inputFile);
+
+/** Write beside the target and rename over it, so a crash never leaves a half-written artefact. */
+function writeAtomic(file: string, data: string | Uint8Array): void {
+  const tmp = `${file}.tmp-${process.pid}`;
+  try {
+    writeFileSync(tmp, data);
+    renameSync(tmp, file);
+  } catch (error) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // the temporary file was never created, or the rename already moved it
+    }
+    throw error;
+  }
+}
 
 const rows = board(snapshot);
 const issues = boardIssues(rows, snapshot);
@@ -38,8 +69,8 @@ if (issues.length > 0) {
 }
 
 mkdirSync(out, { recursive: true });
-writeFileSync(join(out, 'board.json'), `${JSON.stringify({ rows }, null, 0)}\n`);
-writeFileSync(join(out, 'data.js'), `window.RADAR=${JSON.stringify(radarData(snapshot, rows))};\n`);
+writeAtomic(join(out, 'board.json'), `${JSON.stringify({ rows }, null, 0)}\n`);
+writeAtomic(join(out, 'data.js'), `window.RADAR=${JSON.stringify(radarData(snapshot, rows))};\n`);
 
 function copyDir(from: string, to: string): string[] {
   if (!existsSync(from)) return [];
@@ -56,8 +87,13 @@ function copyDir(from: string, to: string): string[] {
 }
 
 const dashboardFiles = copyDir(join(here, 'dashboard'), join(out, 'dashboard'));
-if (!dashboardFiles.includes('index.html')) {
-  process.stderr.write('atlas: dashboard/index.html is missing\n');
+const dashboardMissing = [
+  ...(dashboardFiles.includes('index.html') ? [] : ['index.html']),
+  ...(dashboardFiles.some((f) => f.endsWith('.css')) ? [] : ['at least one .css file']),
+  ...(dashboardFiles.some((f) => f.endsWith('.js')) ? [] : ['at least one .js file']),
+];
+if (dashboardMissing.length > 0) {
+  process.stderr.write(`atlas: dashboard/ is missing ${dashboardMissing.join(', ')}; the gate needs index.html, a stylesheet and a script\n`);
   process.exit(1);
 }
 const shots = copyDir(join(here, 'screenshots'), join(out, 'screenshots'));
@@ -66,7 +102,7 @@ if (shots.length < 3) {
   process.exit(1);
 }
 
-writeFileSync(
+writeAtomic(
   join(out, 'dossier.json'),
   buildDossier(out, { text_max_bytes: 65_536, screenshots: { max: 4, max_bytes: 524_288 }, dashboard: { max_files: 400, max_bytes: 4_194_304 } }),
 );
