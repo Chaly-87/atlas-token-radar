@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ATLAS — pre-token value radar</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="mark" aria-hidden="true">◎</span>
+    <div>
+      <h1>ATLAS</h1>
+      <p class="tag">Pre-token value radar — what a launch would be worth, and how to farm it</p>
+    </div>
+  </div>
+  <div class="meta" id="meta"></div>
+</header>
+
+<section class="kpis" id="kpis" aria-label="Snapshot overview"></section>
+
+<section class="toolbar" aria-label="Filters">
+  <label class="field">
+    <span>Search</span>
+    <input id="q" type="search" placeholder="protocol, category or chain" autocomplete="off">
+  </label>
+  <label class="field">
+    <span>Category</span>
+    <select id="cat"></select>
+  </label>
+  <label class="field">
+    <span>Chain</span>
+    <select id="chain"></select>
+  </label>
+  <label class="field">
+    <span>Sort</span>
+    <select id="sort">
+      <option value="implied">Implied value</option>
+      <option value="odds">Launch odds</option>
+      <option value="weighted">Risk-weighted value</option>
+      <option value="tvl">TVL</option>
+      <option value="growth">7-day growth</option>
+      <option value="age">Time without a token</option>
+    </select>
+  </label>
+  <label class="toggle"><input id="watch" type="checkbox"><span>Watchlist floor only</span></label>
+  <p class="count" id="count"></p>
+</section>
+
+<main class="grid">
+  <section class="board-wrap" aria-label="Ranked board">
+    <table class="board" id="board">
+      <thead>
+        <tr>
+          <th class="r">#</th>
+          <th>Protocol</th>
+          <th>Chains</th>
+          <th class="n">TVL</th>
+          <th class="n">7d</th>
+          <th class="n">No token for</th>
+          <th class="n">Implied value</th>
+          <th class="n">Odds</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </section>
+  <aside class="detail" id="detail" aria-label="Protocol detail" aria-live="polite"></aside>
+</main>
+
+<footer class="foot">
+  <p><strong>How the number is made.</strong> Implied value = TVL × the multiple the market pays per dollar of TVL in that sector × a seven-day growth factor × a maturity factor for time run without a token × a breadth factor for the chains it covers. Launch odds come from the same figures, so a large protocol that may never launch and a smaller one already positioning for a launch are both visible. Nothing here is a prediction or advice: every figure comes from the sealed snapshot of <span id="snapdate"></span>.</p>
+</footer>
+
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
