@@ -18,6 +18,14 @@ Node 22.18 or later runs the TypeScript as it is. The program writes `out/board.
 `out/data.js`, `out/dashboard/`, `out/screenshots/` and `out/dossier.json`. Two runs write the
 same bytes.
 
+## Testes
+
+Da raiz do repositório:
+
+```sh
+node --test
+```
+
 ## The model
 
 ```
