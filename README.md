@@ -1,26 +1,47 @@
-# ATLAS — pre-token value radar
+# ATLAS — Pre-Token Value Radar
 
-An entry for make.fun's **token-radar-01** bounty: it reads the sealed DefiLlama snapshot of 758
-protocols, works out which ones still record no token, and ranks them by what a token would be
-worth if the protocol's record stayed as it is — with the steps to farm each one.
+[![make.fun token-radar-01](https://make.fun/badge/token-radar-01.svg)](https://make.fun/c/token-radar-01)
+[![Rank](https://make.fun/badge/token-radar-01/Chaly-87/atlas-token-radar/rank.svg)](https://make.fun/c/token-radar-01)
+[![Reward](https://make.fun/badge/token-radar-01/Chaly-87/atlas-token-radar/reward.svg)](https://make.fun/c/token-radar-01)
 
-Built from scratch for this bounty. All the code, the model, the wording and the page are new;
-the only third-party file is `vendor/makefun-board.ts`, the dossier writer the bounty's scorer
-requires the entry to use, shipped byte for byte in the official kit.
+**ATLAS** is an entry for make.fun's [token-radar-01 competition](https://make.fun/c/token-radar-01).
+
+It analyzes a sealed DeFiLlama snapshot of 758 protocols, identifies protocols without a recorded token, and ranks pre-token projects using an estimated implied-value model. Each ranked protocol includes a practical activity plan.
+
+## What it does
+
+- Reads the supplied snapshot without requiring external API calls.
+- Evaluates protocols against the competition's 40-project watchlist.
+- Scores 198 pre-token protocols in the generated board.
+- Estimates implied value and launch odds using transparent model factors.
+- Generates five activity-plan steps for each ranked protocol.
+- Produces a static dashboard, screenshots, and a competition dossier.
+
+The estimates are analytical outputs, not guarantees of token launches, airdrops, eligibility, or financial returns.
 
 ## Run it
 
+Requirements: Node.js 22.18 or later and the official `token-radar-01` competition kit.
+
+Set `MAKEFUN_KIT_DIR` to the directory where the official kit has been extracted:
+
 ```sh
-mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../token-radar-01-kit/input/snapshot.json
+export MAKEFUN_KIT_DIR=/path/to/token-radar-01-kit
+mkdir -p out
+MAKEFUN_OUTPUT_DIR=out node main.ts --input "$MAKEFUN_KIT_DIR/input/snapshot.json"
 ```
 
-Node 22.18 or later runs the TypeScript as it is. The program writes `out/board.json`,
-`out/data.js`, `out/dashboard/`, `out/screenshots/` and `out/dossier.json`. Two runs write the
-same bytes.
+The program generates:
 
-## Testes
+- `out/board.json`
+- `out/data.js`
+- `out/dashboard/`
+- `out/screenshots/`
+- `out/dossier.json`
 
-Da raiz do repositório:
+## Tests
+
+Run the test suite from the repository root:
 
 ```sh
 node --test
@@ -28,43 +49,51 @@ node --test
 
 ## The model
 
-```
-implied value = TVL × sector multiple × growth factor × maturity factor × breadth factor
-launch odds   = logistic(bias + tvl term + growth term + months term + watchlist term)
-```
+The implied-value estimate combines:
 
-| Input (from the snapshot only) | What it does |
-| --- | --- |
-| `tvl_usd` | the base: what the protocol already custodies |
-| `category` | the multiple the market pays per dollar of TVL in that sector (one table, 30 sectors, no name special-cased) |
-| `change_7d` | the growth factor, clamped to −60…+150% and weighted at 0.5 |
-| `listed_at` | the maturity factor, from 0.88 at launch to 1.20 after 36 months without a token |
-| `chains` | the breadth factor, +2.5% per extra chain, capped at five |
+- Total value locked (TVL)
+- Sector multiple
+- Growth factor
+- Maturity factor
+- Protocol breadth factor
 
-Launch odds come from the same figures, so a large protocol that may never launch and a smaller
-one already positioning for a launch are both visible. Rows carry both the implied value (which
-is what the board ranks by) and a risk-weighted value (implied × odds).
+Launch odds are estimated using a logistic model incorporating TVL, growth, project age, and watchlist status.
 
-Farm plans are generated per protocol from its own record — category, chains, TVL and age — into
-five steps that each state a cost and a time. No list of names is written by hand anywhere.
+The model records its assumptions in the generated output. Unknown inputs use documented defaults rather than being presented as verified facts.
 
-## The page
+## Validation
 
-`dashboard/` is a static page with no framework and no network: `index.html`, `app.css` and
-`app.js` read `data.js`, written beside the dashboard by `main.ts`. It has a sortable board, a
-search, a category filter, a chain filter and a watchlist toggle; a detail panel recomputes each
-row's implied value from the same multipliers the board carries and shows the farm plan. The view
-is addressable: `?slug=…`, `?cat=…`, `?chain=…`, `?sort=implied|odds|weighted|tvl|growth|age`,
-`?watch=1`, `?q=…`.
+The generated board is checked for:
 
-## The gate
+- Coverage of the 40-project watchlist
+- Contiguous ranking from 1 to the final row
+- Non-increasing implied values
+- Valid integer values within the configured cap
+- Between 3 and 12 activity-plan steps per protocol
+- Activity-plan step lengths within the configured limits
+- A non-empty ranked board
 
-`main.ts` refuses to write a board the gate would reject: it checks coverage of the 40-slug
-watchlist, ranks 1..n, non-increasing implied values, integer values inside the cap, 3–12 farm
-steps of 20–600 characters, and a board that actually ranks something. The dossier is written last,
-by the vendored library, so the scorer's rebuild matches byte for byte.
+The dossier is generated using the competition's vendored `makefun-board` library.
 
-## What is not here
+## Reproducibility
 
-No wallet, no API key, no submission, no signed message. This repository is a prepared entry: it
-has not been entered in the competition.
+The build is deterministic: repeated runs against the same snapshot produce identical output files.
+
+## Ownership and submission status
+
+The repository includes `.makefun/owner.json` to associate the entry with its entrant wallet.
+
+No private wallet key or API key is included in this repository.
+
+The repository is publicly available, but publication on GitHub does not itself constitute an official competition submission. Submission status must be confirmed through make.fun.
+
+## Important limitations
+
+- Implied values and launch odds are model estimates, not market prices or predictions.
+- Activity plans are research suggestions, not guaranteed airdrop strategies.
+- No deposits, transactions, wallet signatures, or external protocol interactions are performed by this tool.
+- Users should independently verify project information and risks before taking any action.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
